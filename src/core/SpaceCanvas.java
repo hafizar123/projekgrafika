@@ -2,10 +2,13 @@ package core;
 
 import javax.swing.JPanel;
 import java.awt.Color;
+import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Image;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
 import java.util.ArrayList;
 import java.util.Iterator;
 import javax.swing.ImageIcon;
@@ -14,9 +17,16 @@ import entities.Player;
 import entities.Laser;
 import entities.Enemy;
 
-public class SpaceCanvas extends JPanel implements Runnable, KeyListener {
+public class SpaceCanvas extends JPanel implements Runnable, KeyListener, MouseListener {
     private Thread gameThread;
     private boolean isRunning = false;
+    private boolean isGameStarted = false; 
+    private boolean isPaused = false; 
+    private boolean isGameOver = false; 
+    
+    // Variabel buat logika Countdown 3, 2, 1
+    private boolean isCountingDown = false;
+    private long countdownStart = 0;
     
     private Player player;
     private ArrayList<Laser> lasers;
@@ -24,20 +34,31 @@ public class SpaceCanvas extends JPanel implements Runnable, KeyListener {
     
     private int score = 0;
     private int lives = 3; 
-    private boolean isGameOver = false; 
     
     private Image bgImage;
     private Image lifeImg; 
+    private Font pixelFont; 
 
     public SpaceCanvas() {
         setBackground(new Color(10, 10, 25)); 
         setFocusable(true);
         addKeyListener(this);
+        addMouseListener(this); 
         
         bgImage = new ImageIcon("src/assets/images/bg.png").getImage();
         lifeImg = new ImageIcon("src/assets/images/life.png").getImage();
         
+        pixelFont = new Font("Monospaced", Font.BOLD, 36); 
+    }
+
+    // Fungsi baru buat jalanin hitung mundur tiap start/restart
+    private void startWithCountdown() {
         initGame(); 
+        isGameStarted = true;
+        isGameOver = false;
+        isPaused = false;
+        isCountingDown = true;
+        countdownStart = System.currentTimeMillis(); // Mulai nyatet waktu
     }
 
     private void initGame() {
@@ -46,7 +67,6 @@ public class SpaceCanvas extends JPanel implements Runnable, KeyListener {
         enemies = new ArrayList<>();
         score = 0;
         lives = 3;
-        isGameOver = false;
         
         spawnEnemy(400, 0);
         spawnEnemy(200, 300); 
@@ -77,11 +97,19 @@ public class SpaceCanvas extends JPanel implements Runnable, KeyListener {
     }
 
     private void updateGameLogic() {
-        if (isGameOver) return; 
+        if (!isGameStarted || isGameOver || isPaused) return; 
+        
+        // Kalo lagi hitung mundur, game ngebeku (freeze)
+        if (isCountingDown) {
+            long elapsed = System.currentTimeMillis() - countdownStart;
+            if (elapsed > 3000) { // Kalo udah lewat 3 detik, gas jalan!
+                isCountingDown = false;
+            }
+            return;
+        }
         
         player.update();
         
-        // Update Musuh & Cek nabrak Pesawat
         for (Enemy e : enemies) {
             e.update();
             if (!e.getDead() && player.checkHit(e.getX(), e.getY())) {
@@ -95,7 +123,6 @@ public class SpaceCanvas extends JPanel implements Runnable, KeyListener {
             }
         }
         
-        // Update Peluru & Cek kena Musuh
         Iterator<Laser> iter = lasers.iterator();
         while (iter.hasNext()) {
             Laser l = iter.next();
@@ -117,7 +144,6 @@ public class SpaceCanvas extends JPanel implements Runnable, KeyListener {
             }
         }
         
-        // Respawn musuh jika udah selesai animasi meledak
         for (int i = 0; i < enemies.size(); i++) {
             Enemy e = enemies.get(i);
             if (e.getDead() && e.getScale() <= 0) {
@@ -137,22 +163,72 @@ public class SpaceCanvas extends JPanel implements Runnable, KeyListener {
         
         if (bgImage != null) g.drawImage(bgImage, 0, 0, 800, 600, this);
         
+        // --- LAYAR START MENU (Udah di-center) ---
+        if (!isGameStarted) {
+            g.setFont(pixelFont);
+            g.setColor(new Color(0, 255, 255)); 
+            // Geser dari 180 ke 200 biar pas di tengah
+            g.drawString("PRESS SPACE TO START", 150, 280); 
+            return;
+        }
+        
         for (Enemy e : enemies) e.draw(g);
         for (Laser l : lasers) l.draw(g);
         player.draw(g); 
         
-        // UI Skor
         g.setColor(new Color(0, 255, 255)); 
         g.drawString("SCORE: " + score, 20, 30);
         
-        // UI Nyawa
         for (int i = 0; i < lives; i++) {
             if (lifeImg != null) {
                 g.drawImage(lifeImg, 20 + (i * 35), 45, 25, 25, null);
             }
         }
+
+        // Icon Pause di pojok
+        g.setColor(Color.WHITE);
+        g.drawRect(730, 15, 40, 40); 
+        if (isPaused) {
+            int[] xPts = {745, 745, 760};
+            int[] yPts = {22, 48, 35};
+            g.fillPolygon(xPts, yPts, 3);
+        } else {
+            g.fillRect(742, 25, 6, 20);
+            g.fillRect(754, 25, 6, 20);
+        }
         
-        // Pop-up Game Over 
+        // Teks hitung mundur (Udah di-center kemaren)
+        if (isCountingDown) {
+            long elapsed = System.currentTimeMillis() - countdownStart;
+            String countText = "";
+            if (elapsed < 1000) countText = "3";
+            else if (elapsed < 2000) countText = "2";
+            else if (elapsed < 3000) countText = "1";
+            
+            if (!countText.isEmpty()) {
+                g.setColor(new Color(0, 0, 0, 150)); 
+                g.fillRect(0, 0, 800, 600); 
+                g.setFont(new Font("Monospaced", Font.BOLD, 80));
+                g.setColor(Color.YELLOW);
+                g.drawString(countText, 355, 320);
+            }
+        }
+        
+        // --- LAYAR PAUSE (Udah di-center) ---
+        if (isPaused && !isGameOver && !isCountingDown) {
+            g.setColor(new Color(0, 0, 0, 150)); 
+            g.fillRect(0, 0, 800, 600); 
+            
+            g.setFont(pixelFont);
+            g.setColor(Color.YELLOW); 
+            g.drawString("PAUSED", 315, 270); // Geser dikit
+            
+            g.setFont(new Font("Monospaced", Font.PLAIN, 18));
+            g.setColor(Color.WHITE);
+            g.drawString("Press SPACE to Resume", 265, 310); // Presisi tengah
+        }
+        
+        // --- LAYAR GAME OVER (Udah di-center) ---
         if (isGameOver) {
             g.setColor(new Color(0, 0, 0, 200)); 
             g.fillRect(0, 0, 800, 600); 
@@ -161,17 +237,35 @@ public class SpaceCanvas extends JPanel implements Runnable, KeyListener {
             g.fillRect(250, 220, 300, 120); 
             
             g.setColor(Color.WHITE);
-            g.drawString("GAME OVER", 360, 260);
-            g.drawString("FINAL SCORE: " + score, 340, 290);
-            g.drawString("Press ENTER to Restart", 330, 320);
+            g.setFont(new Font("Monospaced", Font.PLAIN, 18)); 
+            g.drawString("GAME OVER", 345, 260); // Presisi tengah
+            g.drawString("FINAL SCORE: " + score, 325, 290); // Presisi tengah
+            g.drawString("Press SPACE to Restart", 285, 320); // Presisi tengah
         }
     }
 
     @Override
     public void keyPressed(KeyEvent e) {
-        if (isGameOver) {
-            if (e.getKeyCode() == KeyEvent.VK_ENTER) {
-                initGame(); 
+        // Logika Start Menu dan Game Over diganti pake SPACE
+        if (!isGameStarted || isGameOver) {
+            if (e.getKeyCode() == KeyEvent.VK_SPACE) {
+                startWithCountdown();
+            }
+            return; 
+        }
+
+        // Kalo lagi hitung mundur, input keyboard dimatiin biar kaga curang nyolong start
+        if (isCountingDown) return; 
+        
+        // Tekan ESC buat PAUSE
+        if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+            isPaused = true;
+        }
+        
+        // Tekan SPACE buat RESUME dari Pause
+        if (isPaused) {
+            if (e.getKeyCode() == KeyEvent.VK_SPACE) {
+                isPaused = false;
             }
             return; 
         }
@@ -179,6 +273,7 @@ public class SpaceCanvas extends JPanel implements Runnable, KeyListener {
         if (e.getKeyCode() == KeyEvent.VK_LEFT) player.setDx(-5);
         if (e.getKeyCode() == KeyEvent.VK_RIGHT) player.setDx(5);
         
+        // Tombol nembak dipindah ke mari pas kaga pause
         if (e.getKeyCode() == KeyEvent.VK_SPACE) {
             lasers.add(new Laser(player.getX(), player.getY() - 20));
             SoundManager.playSound("src/assets/sounds/laser.wav"); 
@@ -194,4 +289,33 @@ public class SpaceCanvas extends JPanel implements Runnable, KeyListener {
 
     @Override
     public void keyTyped(KeyEvent e) {}
+
+    @Override
+    public void mousePressed(MouseEvent e) {
+        int mx = e.getX();
+        int my = e.getY();
+        
+        // Kalo klik pas belom mulai atau game over, langsung start
+        if (!isGameStarted || isGameOver) {
+            startWithCountdown();
+            return;
+        }
+
+        if (isPaused) {
+            isPaused = false;
+            return;
+        }
+        
+        // Logika mencet tombol Pause di pojok kanan atas
+        if (!isCountingDown) {
+            if (mx >= 730 && mx <= 770 && my >= 15 && my <= 55) {
+                isPaused = !isPaused;
+            }
+        }
+    }
+    
+    @Override public void mouseClicked(MouseEvent e) {}
+    @Override public void mouseReleased(MouseEvent e) {}
+    @Override public void mouseEntered(MouseEvent e) {}
+    @Override public void mouseExited(MouseEvent e) {}
 }
