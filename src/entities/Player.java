@@ -30,7 +30,7 @@ public class Player {
 
     public boolean checkHit(int enemyX, int enemyY) {
         double distance = Math.hypot(x - enemyX, y - enemyY);
-        return distance < 30; // 30 itu radius body peswat
+        return distance < 30; // 30  body peswat
     }
 
     public void draw(Graphics g) {
